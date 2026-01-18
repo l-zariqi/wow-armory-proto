@@ -11,9 +11,19 @@ app.use(express.json());
 
 // Blizzard API Configuration
 const CLIENT_ID = '5ce566e3d319445eb4cf03a900d4a2fd';
-const CLIENT_SECRET = '9ALdNIdzzTOTQdBp533R6cWCn194DPlA'; // Replace with your actual secret
-const REGION = 'eu'; // or 'eu' depending on your target region
+const CLIENT_SECRET = '9ALdNIdzzTOTQdBp533R6cWCn194DPlA';
+const REGION = 'us';
 const LOCALE = 'en_US';
+
+// Namespace mapping for different Classic versions
+const getNamespace = (version, region, type = 'profile') => {
+  const namespaces = {
+    'classic-era': `${type}-classic1x-${region}`,
+    'classic-anniversary': `${type}-classic-${region}`,
+    'classic': `${type}-classic-${region}` // Anniversary uses the same namespace as regular classic
+  };
+  return namespaces[version] || namespaces['classic-era'];
+};
 
 // Token storage (in production, use Redis or similar)
 let accessToken = null;
@@ -52,20 +62,21 @@ async function getAccessToken() {
 }
 
 // Get character profile
-app.get('/api/character/:realm/:characterName', async (req, res) => {
+app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
   try {
-    const { realm, characterName } = req.params;
+    const { region, realm, characterName } = req.params;
+    const version = req.query.version || 'classic-era'; // classic-era or classic (anniversary)
     const token = await getAccessToken();
     
     const realmSlug = realm.toLowerCase().replace(/\s+/g, '-');
     const characterSlug = characterName.toLowerCase();
 
     // Get character profile summary
-    const profileUrl = `https://${REGION}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}`;
+    const profileUrl = `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}`;
     
     const profileResponse = await axios.get(profileUrl, {
       params: {
-        namespace: `profile-classic1x-${REGION}`,
+        namespace: getNamespace(version, region, 'profile'),
         locale: LOCALE
       },
       headers: {
@@ -73,12 +84,31 @@ app.get('/api/character/:realm/:characterName', async (req, res) => {
       }
     });
 
+    // Get character media (avatar/portrait)
+    const mediaUrl = `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}/character-media`;
+    
+    let characterMedia = null;
+    try {
+      const mediaResponse = await axios.get(mediaUrl, {
+        params: {
+          namespace: getNamespace(version, region, 'profile'),
+          locale: LOCALE
+        },
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      characterMedia = mediaResponse.data;
+    } catch (mediaError) {
+      console.log('Character media not available');
+    }
+
     // Get character equipment
-    const equipmentUrl = `https://${REGION}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}/equipment`;
+    const equipmentUrl = `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}/equipment`;
     
     const equipmentResponse = await axios.get(equipmentUrl, {
       params: {
-        namespace: `profile-classic1x-${REGION}`,
+        namespace: getNamespace(version, region, 'profile'),
         locale: LOCALE
       },
       headers: {
@@ -91,11 +121,11 @@ app.get('/api/character/:realm/:characterName', async (req, res) => {
       (equipmentResponse.data.equipped_items || []).map(async (item) => {
         try {
           if (item.media?.id) {
-            const mediaUrl = `https://${REGION}.api.blizzard.com/data/wow/media/item/${item.media.id}`;
+            const mediaUrl = `https://${region}.api.blizzard.com/data/wow/media/item/${item.media.id}`;
             const mediaResponse = await axios.get(mediaUrl, {
               params: {
-                namespace: `static-classic1x-${REGION}`,
-                locale: LOCALE
+                namespace: getNamespace(version, region, 'static'),
+              locale: LOCALE
               },
               headers: {
                 'Authorization': `Bearer ${token}`
@@ -113,13 +143,13 @@ app.get('/api/character/:realm/:characterName', async (req, res) => {
     equipmentResponse.data.equipped_items = equipmentWithIcons;
 
     // Get character statistics
-    const statsUrl = `https://${REGION}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}/statistics`;
+    const statsUrl = `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}/statistics`;
     
     let statsResponse;
     try {
       statsResponse = await axios.get(statsUrl, {
         params: {
-          namespace: `profile-classic1x-${REGION}`,
+          namespace: getNamespace(version, region, 'profile'),
           locale: LOCALE
         },
         headers: {
@@ -134,7 +164,8 @@ app.get('/api/character/:realm/:characterName', async (req, res) => {
     res.json({
       profile: profileResponse.data,
       equipment: equipmentResponse.data,
-      statistics: statsResponse.data
+      statistics: statsResponse.data,
+      media: characterMedia
     });
 
   } catch (error) {
@@ -199,12 +230,14 @@ app.get('/api/guild/:realm/:guildName', async (req, res) => {
 app.get('/api/realms', async (req, res) => {
   try {
     const token = await getAccessToken();
+    const region = req.query.region || REGION;
+    const version = req.query.version || 'classic-era'; // classic-era or classic (anniversary)
     
-    const realmsUrl = `https://${REGION}.api.blizzard.com/data/wow/realm/index`;
+    const realmsUrl = `https://${region}.api.blizzard.com/data/wow/realm/index`;
     
     const response = await axios.get(realmsUrl, {
       params: {
-        namespace: `dynamic-classic1x-${REGION}`,
+        namespace: getNamespace(version, region, 'dynamic'),
         locale: LOCALE
       },
       headers: {
@@ -230,5 +263,4 @@ app.get('/health', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Backend server running on http://localhost:${PORT}`);
-  console.log(`Make sure to replace CLIENT_SECRET with your actual secret!`);
 });
