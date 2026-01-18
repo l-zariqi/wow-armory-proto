@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'Fritz Quadrata';
+  src: url('/assets/fonts/FrizQuadrata.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+body {
+  font-family: 'Fritz Quadrata', serif;
+  cursor: url('/assets/icons/Point.png'), auto;
+}
+
+a, button, input, select {
+  cursor: url('/assets/icons/Point.png'), pointer;
+}
+
+a:hover, button:hover {
+  cursor: url('/assets/icons/Point.png'), pointer;
+}
