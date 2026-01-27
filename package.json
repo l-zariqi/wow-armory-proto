@@ -1,0 +1,12 @@
+{
+  "name": "wow-armory-proto",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "concurrently --names \"BACKEND,FRONTEND\" --prefix-colors \"blue,green\" \"npm run server\" \"npm run client\"",
+    "server": "cd wow-armory-backend && npm start",
+    "client": "cd wow-armory-frontend && npm start"
+  },
+  "dependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

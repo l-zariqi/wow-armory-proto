@@ -1,19 +1,30 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+require('dotenv').config();
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
 // Blizzard API Configuration
-const CLIENT_ID = '5ce566e3d319445eb4cf03a900d4a2fd';
-const CLIENT_SECRET = '9ALdNIdzzTOTQdBp533R6cWCn194DPlA';
-const REGION = 'us';
-const LOCALE = 'en_US';
+const CLIENT_ID = process.env.CLIENT_ID;
+const CLIENT_SECRET = process.env.CLIENT_SECRET;
+const REGION = process.env.REGION || 'us';
+const LOCALE = process.env.LOCALE || 'en_US';
+
+// Check for required environment variables
+if (!CLIENT_ID || !CLIENT_SECRET) {
+  console.error('ERROR: CLIENT_ID and CLIENT_SECRET must be set in .env file');
+  process.exit(1);
+}
+
+console.log('✓ Environment variables loaded successfully');
+console.log('✓ CLIENT_ID:', CLIENT_ID);
+console.log('✓ CLIENT_SECRET:', CLIENT_SECRET ? '***configured***' : 'MISSING');
 
 // Namespace mapping for different Classic versions
 const getNamespace = (version, region, type = 'profile') => {
@@ -53,7 +64,7 @@ async function getAccessToken() {
     accessToken = response.data.access_token;
     tokenExpiry = Date.now() + (response.data.expires_in * 1000);
     
-    console.log('Access token obtained successfully');
+    console.log('✓ Access token obtained successfully');
     return accessToken;
   } catch (error) {
     console.error('Error getting access token:', error.response?.data || error.message);
@@ -125,7 +136,7 @@ app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
             const mediaResponse = await axios.get(mediaUrl, {
               params: {
                 namespace: getNamespace(version, region, 'static'),
-              locale: LOCALE
+                locale: LOCALE
               },
               headers: {
                 'Authorization': `Bearer ${token}`
@@ -262,5 +273,5 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Backend server running on http://localhost:${PORT}`);
+  console.log(`✓ Backend server running on http://localhost:${PORT}`);
 });
