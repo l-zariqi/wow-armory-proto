@@ -183,6 +183,7 @@ const WoWArmory = () => {
           data-wowhead={`item=${itemId}&domain=classic`}
           target="_blank"
           rel="noopener noreferrer"
+          onMouseDown={(e) => e.preventDefault()}
           className="relative w-16 h-16 rounded border-2 bg-black bg-opacity-60 group cursor-pointer block overflow-hidden flex-shrink-0" 
           style={{ borderColor: getQualityColor(item.quality?.type) }}
         >
@@ -202,16 +203,12 @@ const WoWArmory = () => {
         </a>
         {showName && (
           <div className={`flex flex-col ${alignRight ? 'items-end' : 'items-start'}`}>
-            <a 
-              href={wowheadUrl}
-              data-wowhead={`item=${itemId}&domain=classic`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`text-base hover:underline font-sans ${alignRight ? 'text-right' : ''}`}
+            <span 
+              className={`text-base font-sans ${alignRight ? 'text-right' : ''}`}
               style={{ color: getQualityColor(item.quality?.type) }}
             >
               {item.name}
-            </a>
+            </span>
             {enchantText && (
               <span 
                 className={`text-sm ${alignRight ? 'text-right' : ''} font-sans`}
@@ -417,9 +414,14 @@ const WoWArmory = () => {
                 setShowCharacter(false);
                 setCharacterData(null);
               }}
-              className="text-red-500 hover:text-red-400 transition-colors"
+              className="text-red-500 hover:text-red-400 transition-colors p-2 rounded"
+              style={{
+                background: 'linear-gradient(to bottom, #2d2d2d, #1a1a1a)',
+                border: '2px solid #3d3d3d',
+                boxShadow: 'inset 0 1px 2px rgba(255,255,255,0.1)'
+              }}
             >
-              <X size={32} />
+              <X size={24} />
             </button>
           </div>
         </div>
@@ -510,16 +512,13 @@ const WoWArmory = () => {
           {/* Bottom Weapon Slots */}
           <div className="mt-8 flex justify-center gap-8">
             <div className="flex flex-col items-center gap-2">
-              <GearSlot slot="MAIN_HAND" />
-              <div className="text-sm text-gray-400 font-sans">Main Hand</div>
+              <GearSlot slot="MAIN_HAND" showName={true} />
             </div>
             <div className="flex flex-col items-center gap-2">
-              <GearSlot slot="OFF_HAND" />
-              <div className="text-sm text-gray-400 font-sans">Off Hand</div>
+              <GearSlot slot="OFF_HAND" showName={true} />
             </div>
             <div className="flex flex-col items-center gap-2">
-              <GearSlot slot="RANGED" />
-              <div className="text-sm text-gray-400 font-sans">Ranged</div>
+              <GearSlot slot="RANGED" showName={true} />
             </div>
           </div>
         </div>
@@ -551,4 +550,4 @@ const WoWArmory = () => {
   );
 };
 
-export default WoWArmory;
+export default WoWArmory; 
