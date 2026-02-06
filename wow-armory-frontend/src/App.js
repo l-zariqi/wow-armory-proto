@@ -1,5 +1,7 @@
+/* eslint-disable react/jsx-no-target-blank */
 import React, { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
+import CharacterModel from "./CharacterModel";
 
 const WoWArmory = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,20 +48,20 @@ const WoWArmory = () => {
         fetch(`${API_BASE}/realms?region=us&version=${selectedVersion}`),
         fetch(`${API_BASE}/realms?region=eu&version=${selectedVersion}`)
       ]);
-      
+
       const usData = await usResponse.json();
       const euData = await euResponse.json();
-      
+
       const usRealms = (usData.realms || []).map(r => ({ ...r, region: 'US' }));
       const euRealms = (euData.realms || []).map(r => ({ ...r, region: 'EU' }));
-      
+
       setRealms([...usRealms, ...euRealms].sort((a, b) => a.name.localeCompare(b.name)));
     } catch (err) {
       console.error('Failed to fetch realms:', err);
     }
   };
 
-  const filteredRealms = realms.filter(realm => 
+  const filteredRealms = realms.filter(realm =>
     realm.name.toLowerCase().includes(realmSearch.toLowerCase())
   );
 
@@ -157,7 +159,7 @@ const WoWArmory = () => {
 
   const GearSlot = ({ slot, showName = false, alignRight = false }) => {
     const item = getEquipmentBySlot(slot);
-    
+
     if (!item) {
       return (
         <div className={`flex items-center gap-4 ${alignRight ? 'flex-row-reverse' : ''}`}>
@@ -172,22 +174,23 @@ const WoWArmory = () => {
     const iconUrl = item.icon || 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
     const enchant = item.enchantments?.[0];
     const itemLevel = item.level?.value || item.item?.level || 0;
-    
+
     // Remove "Enchant" or "Enchanted:" prefix from enchant string
     const enchantText = enchant?.display_string?.replace(/^(Enchant(ed)?:?\s*|Enchant\s+\w+\s+-\s*)/i, '') || '';
 
+    // Build rel attribute for enchantment
+    const relAttr = enchant?.enchantment_id ? `enchantment=${enchant.enchantment_id}` : undefined;
+
     return (
       <div className={`flex items-center gap-4 ${alignRight ? 'flex-row-reverse' : ''}`}>
-        <a 
+        <a
           href={wowheadUrl}
-          data-wowhead={`item=${itemId}&domain=classic`}
+          data-wowhead={`item=${itemId}${relAttr ? `&${relAttr}` : ''}`}
           target="_blank"
-          rel="noopener noreferrer"
-          onMouseDown={(e) => e.preventDefault()}
-          className="relative w-16 h-16 rounded border-2 bg-black bg-opacity-60 group cursor-pointer block overflow-hidden flex-shrink-0" 
+          className="relative w-16 h-16 rounded border-2 bg-black bg-opacity-60 group cursor-pointer block overflow-hidden flex-shrink-0"
           style={{ borderColor: getQualityColor(item.quality?.type) }}
         >
-          <img 
+          <img
             src={iconUrl}
             alt={item.name}
             className="w-full h-full object-cover"
@@ -203,14 +206,14 @@ const WoWArmory = () => {
         </a>
         {showName && (
           <div className={`flex flex-col ${alignRight ? 'items-end' : 'items-start'}`}>
-            <span 
+            <span
               className={`text-base font-sans ${alignRight ? 'text-right' : ''}`}
               style={{ color: getQualityColor(item.quality?.type) }}
             >
               {item.name}
             </span>
             {enchantText && (
-              <span 
+              <span
                 className={`text-sm ${alignRight ? 'text-right' : ''} font-sans`}
                 style={{ color: '#1eff00' }}
               >
@@ -237,14 +240,31 @@ const WoWArmory = () => {
           boxShadow: '0 0 40px rgba(0,0,0,0.9), inset 0 2px 10px rgba(255,255,255,0.1)'
         }}>
           <div className="text-center mb-8">
-            <h1 className="text-5xl font-bold mb-2" style={{
-              color: '#ffd700',
-              textShadow: '2px 2px 4px rgba(0,0,0,0.8), 0 0 20px rgba(255,215,0,0.3)',
-              fontFamily: "'Fritz Quadrata', serif"
-            }}>
-              WoW Classic Armory
-            </h1>
-            <p className="text-gray-400 mt-2 font-sans">Classic Era & Anniversary Realms</p>
+            {selectedVersion === 'tbc-anniversary' ? (
+              <div className="flex flex-col items-center">
+                <img 
+                  src="/assets/WOW_BCC_Anniversary_Logo.png" 
+                  alt="WoW Burning Crusade Classic Anniversary Edition"
+                  className="h-32 mb-2"
+                  style={{
+                    filter: 'drop-shadow(2px 2px 4px rgba(0,0,0,0.8))'
+                  }}
+                />
+                <p className="text-gray-400 mt-2 font-sans">Anniversary Edition Armory</p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center">
+                <img 
+                  src="/assets/WOW_Classic_Logo.png" 
+                  alt="WoW Classic Era"
+                  className="h-32 mb-2"
+                  style={{
+                    filter: 'drop-shadow(2px 2px 4px rgba(0,0,0,0.8))'
+                  }}
+                />
+                <p className="text-gray-400 mt-2 font-sans">Classic Era Armory</p>
+              </div>
+            )}
           </div>
 
           {error && (
@@ -273,19 +293,19 @@ const WoWArmory = () => {
               </button>
               <button
                 onClick={() => {
-                  setSelectedVersion('classic');
+                  setSelectedVersion('tbc-anniversary');
                   setSelectedRealm('');
                   setRealmSearch('');
                 }}
                 className="flex-1 px-4 py-2 rounded font-semibold transition-all font-sans"
                 style={{
-                  background: selectedVersion === 'classic' ? 'linear-gradient(to bottom, #4a4a4a, #2d2d2d)' : 'linear-gradient(to bottom, #1a1a1a, #0d0d0d)',
+                  background: selectedVersion === 'tbc-anniversary' ? 'linear-gradient(to bottom, #4a4a4a, #2d2d2d)' : 'linear-gradient(to bottom, #1a1a1a, #0d0d0d)',
                   borderColor: '#8B7355',
                   border: '2px solid',
-                  color: selectedVersion === 'classic' ? '#ffd700' : '#999'
+                  color: selectedVersion === 'tbc-anniversary' ? 'rgba(184, 217, 4)' : '#999'
                 }}
               >
-                Anniversary
+                Anniversary (TBC)
               </button>
             </div>
             <input
@@ -317,7 +337,7 @@ const WoWArmory = () => {
                 }}
               />
               {showRealmDropdown && filteredRealms.length > 0 && (
-                <div 
+                <div
                   className="absolute z-10 w-full mt-1 rounded border-2 bg-black bg-opacity-95 max-h-60 overflow-y-auto"
                   style={{
                     borderColor: '#8B7355',
@@ -337,7 +357,7 @@ const WoWArmory = () => {
                 </div>
               )}
             </div>
-            <button 
+            <button
               onClick={handleSearch}
               disabled={loading}
               className="w-full px-8 py-3 rounded font-bold border-2 transition-all flex items-center justify-center gap-2 font-sans"
@@ -381,16 +401,22 @@ const WoWArmory = () => {
         }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-6">
-              <div className="w-24 h-24 rounded-full border-4 bg-black bg-opacity-60 overflow-hidden flex items-center justify-center" style={{
-                borderColor: '#8B7355',
-                boxShadow: '0 0 20px rgba(139,115,85,0.5)'
-              }}>
-                <img 
-                  src={`https://wow.zamimg.com/images/wow/icons/large/${getClassIcon(profile.character_class?.name)}.jpg`}
-                  alt={profile.character_class?.name}
+              <div
+                className="w-24 h-24 rounded-full border-4 bg-black bg-opacity-60 overflow-hidden flex items-center justify-center"
+                style={{
+                  borderColor: '#8B7355',
+                  boxShadow: '0 0 20px rgba(139,115,85,0.5)'
+                }}
+              >
+                <img
+                  src={
+                    characterData?.media?.assets?.find(a => a.key === 'avatar')?.value
+                    || `https://wow.zamimg.com/images/wow/icons/large/${getClassIcon(profile.character_class?.name)}.jpg`
+                  }
+                  alt={profile.name}
                   className="w-full h-full object-cover"
                   onError={(e) => {
-                    e.target.src = 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
+                    e.target.src = `https://wow.zamimg.com/images/wow/icons/large/${getClassIcon(profile.character_class?.name)}.jpg`;
                   }}
                 />
               </div>
@@ -409,7 +435,7 @@ const WoWArmory = () => {
                 )}
               </div>
             </div>
-            <button 
+            <button
               onClick={() => {
                 setShowCharacter(false);
                 setCharacterData(null);
@@ -443,35 +469,18 @@ const WoWArmory = () => {
 
             {/* Center - Character Model & Stats */}
             <div className="flex flex-col items-center justify-between">
-              {/* Character Portrait/Render */}
+              {/* Center - 3D Model */}
               <div className="w-72 h-96 rounded border-2 mb-6 bg-gradient-to-b from-gray-800 to-gray-900 flex items-center justify-center overflow-hidden" style={{
                 borderColor: '#3d3d3d',
                 boxShadow: 'inset 0 2px 20px rgba(0,0,0,0.8)'
               }}>
-                {characterData?.media?.assets ? (
-                  <img 
-                    src={characterData.media.assets.find(a => a.key === 'main-raw' || a.key === 'main')?.value || characterData.media.assets.find(a => a.key === 'avatar')?.value}
-                    alt={profile.name}
-                    className="w-full h-full object-contain"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                      const parent = e.target.parentElement;
-                      parent.innerHTML = `
-                        <div class="text-gray-600 text-center">
-                          <div class="text-9xl mb-3">⚔️</div>
-                          <div class="text-lg text-gray-400">${profile.character_class?.name}</div>
-                        </div>
-                      `;
-                    }}
-                  />
-                ) : (
-                  <div className="text-gray-600 text-center">
-                    <div className="text-9xl mb-3">⚔️</div>
-                    <div className="text-lg text-gray-400">{profile.character_class?.name}</div>
-                  </div>
-                )}
+                <CharacterModel
+                  region={profile.realm?.slug?.split('-')[0] || "us"}
+                  realmSlug={profile.realm?.slug}
+                  characterName={profile.name}
+                  // gameVersion={selectedVersion === "tbc-anniversary" ? "tbc" : "classic"}
+                />
               </div>
-
               {/* Stats Display */}
               <div className="w-full space-y-2 mb-4">
                 <div className="flex justify-between items-center px-3 font-sans">
@@ -536,13 +545,13 @@ const WoWArmory = () => {
             Character
           </button>
           <button className="px-6 py-3 rounded text-lg text-gray-400 hover:text-gray-300 transition-all">
-            Reputation
+            Stats
           </button>
           <button className="px-6 py-3 rounded text-lg text-gray-400 hover:text-gray-300 transition-all">
-            Skills
+            Talents
           </button>
           <button className="px-6 py-3 rounded text-lg text-gray-400 hover:text-gray-300 transition-all">
-            Honor
+            PvP
           </button>
         </div>
       </div>
@@ -550,4 +559,4 @@ const WoWArmory = () => {
   );
 };
 
-export default WoWArmory; 
+export default WoWArmory;
