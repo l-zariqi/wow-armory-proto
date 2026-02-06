@@ -28,13 +28,18 @@ console.log('✓ CLIENT_SECRET:', CLIENT_SECRET ? '***configured***' : 'MISSING'
 
 // Namespace mapping for different Classic versions
 const getNamespace = (version, region, type = 'profile') => {
-  const namespaces = {
-    'classic-era': `${type}-classic1x-${region}`,
-    'classic-anniversary': `${type}-classic-${region}`,
-    'classic': `${type}-classic-${region}` // Anniversary uses the same namespace as regular classic
-  };
-  return namespaces[version] || namespaces['classic-era'];
+  switch (version) {
+    case 'classic-era':
+      return `${type}-classic1x-${region}`;
+    case 'tbc-anniversary':
+      return `${type}-classicann-${region}`;
+    default:
+      return `${type}-classic1x-${region}`;
+  }
 };
+
+// Item media is always served from retail static namespace (even for Classic/TBC)
+const getItemMediaNamespace = (region) => `static-${region}`;
 
 // Token storage (in production, use Redis or similar)
 let accessToken = null;
@@ -135,11 +140,11 @@ app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
             const mediaUrl = `https://${region}.api.blizzard.com/data/wow/media/item/${item.media.id}`;
             const mediaResponse = await axios.get(mediaUrl, {
               params: {
-                namespace: getNamespace(version, region, 'static'),
+                namespace: getItemMediaNamespace(region),
                 locale: LOCALE
               },
               headers: {
-                'Authorization': `Bearer ${token}`
+                Authorization: `Bearer ${token}`
               }
             });
             item.icon = mediaResponse.data.assets?.[0]?.value || null;
@@ -189,39 +194,30 @@ app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
 });
 
 // Get guild roster
-app.get('/api/guild/:realm/:guildName', async (req, res) => {
+app.get('/api/guild/:region/:realm/:guildName', async (req, res) => {
   try {
-    const { realm, guildName } = req.params;
+    const { region, realm, guildName } = req.params;
+    const version = req.query.version || 'classic-era';
     const token = await getAccessToken();
-    
+
     const realmSlug = realm.toLowerCase().replace(/\s+/g, '-');
     const guildSlug = guildName.toLowerCase().replace(/\s+/g, '-');
 
-    // Get guild profile
-    const guildUrl = `https://${REGION}.api.blizzard.com/data/wow/guild/${realmSlug}/${guildSlug}`;
-    
-    const guildResponse = await axios.get(guildUrl, {
-      params: {
-        namespace: `profile-classic1x-${REGION}`,
-        locale: LOCALE
-      },
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
+    const namespace = getNamespace(version, region, 'profile');
 
-    // Get guild roster
-    const rosterUrl = `https://${REGION}.api.blizzard.com/data/wow/guild/${realmSlug}/${guildSlug}/roster`;
-    
-    const rosterResponse = await axios.get(rosterUrl, {
-      params: {
-        namespace: `profile-classic1x-${REGION}`,
-        locale: LOCALE
-      },
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
+    const guildUrl = `https://${region}.api.blizzard.com/data/wow/guild/${realmSlug}/${guildSlug}`;
+    const rosterUrl = `${guildUrl}/roster`;
+
+    const [guildResponse, rosterResponse] = await Promise.all([
+      axios.get(guildUrl, {
+        params: { namespace, locale: LOCALE },
+        headers: { Authorization: `Bearer ${token}` }
+      }),
+      axios.get(rosterUrl, {
+        params: { namespace, locale: LOCALE },
+        headers: { Authorization: `Bearer ${token}` }
+      })
+    ]);
 
     res.json({
       guild: guildResponse.data,
@@ -231,11 +227,11 @@ app.get('/api/guild/:realm/:guildName', async (req, res) => {
   } catch (error) {
     console.error('Error fetching guild:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
-      error: error.response?.data?.detail || 'Failed to fetch guild data',
-      message: error.message
+      error: error.response?.data?.detail || 'Failed to fetch guild data'
     });
   }
 });
+
 
 // Get available realms
 app.get('/api/realms', async (req, res) => {
