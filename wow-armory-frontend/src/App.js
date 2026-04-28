@@ -1,7 +1,7 @@
 /* eslint-disable react/jsx-no-target-blank */
 import React, { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
-import CharacterModel from "./CharacterModel";
+import CharacterModel from "./CharacterModel.js";
 
 const WoWArmory = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -170,15 +170,15 @@ const WoWArmory = () => {
     }
 
     const itemId = item.item?.id;
-    const wowheadUrl = `https://www.wowhead.com/classic/item=${itemId}`;
+    const wowheadBase =
+      selectedVersion === 'tbc-anniversary'
+        ? 'https://www.wowhead.com/tbc/item='
+        : 'https://www.wowhead.com/classic/item=';
+    const wowheadUrl = `${wowheadBase}${itemId}`;
     const iconUrl = item.icon || 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
     const enchant = item.enchantments?.[0];
     const itemLevel = item.level?.value || item.item?.level || 0;
-
-    // Remove "Enchant" or "Enchanted:" prefix from enchant string
     const enchantText = enchant?.display_string?.replace(/^(Enchant(ed)?:?\s*|Enchant\s+\w+\s+-\s*)/i, '') || '';
-
-    // Build rel attribute for enchantment
     const relAttr = enchant?.enchantment_id ? `enchantment=${enchant.enchantment_id}` : undefined;
 
     return (
@@ -243,26 +243,24 @@ const WoWArmory = () => {
             {selectedVersion === 'tbc-anniversary' ? (
               <div className="flex flex-col items-center">
                 <img 
-                  src="/assets/WOW_BCC_Anniversary_Logo.png" 
+                  src="/assets/logos/WOW_BCC_Anniversary_Logo.png" 
                   alt="WoW Burning Crusade Classic Anniversary Edition"
                   className="h-32 mb-2"
                   style={{
                     filter: 'drop-shadow(2px 2px 4px rgba(0,0,0,0.8))'
                   }}
                 />
-                <p className="text-gray-400 mt-2 font-sans">Anniversary Edition Armory</p>
               </div>
             ) : (
               <div className="flex flex-col items-center">
                 <img 
-                  src="/assets/WOW_Classic_Logo.png" 
+                  src="/assets/logos/WOW_Classic_Logo.png" 
                   alt="WoW Classic Era"
                   className="h-32 mb-2"
                   style={{
                     filter: 'drop-shadow(2px 2px 4px rgba(0,0,0,0.8))'
                   }}
                 />
-                <p className="text-gray-400 mt-2 font-sans">Classic Era Armory</p>
               </div>
             )}
           </div>

@@ -237,29 +237,37 @@ app.get('/api/guild/:region/:realm/:guildName', async (req, res) => {
 app.get('/api/realms', async (req, res) => {
   try {
     const token = await getAccessToken();
-    const region = req.query.region || REGION;
-    const version = req.query.version || 'classic-era'; // classic-era or classic (anniversary)
-    
-    const realmsUrl = `https://${region}.api.blizzard.com/data/wow/realm/index`;
-    
-    const response = await axios.get(realmsUrl, {
-      params: {
-        namespace: getNamespace(version, region, 'dynamic'),
-        locale: LOCALE
-      },
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
+    const version = req.query.version || 'classic-era';
+    const regions = ['us', 'eu'];
+    const results = await Promise.all(
+      regions.map(async (region) => {
+        const response = await axios.get(
+          `https://${region}.api.blizzard.com/data/wow/realm/index`,
+          {
+            params: {
+              namespace: getNamespace(version, region, 'dynamic'),
+              locale: LOCALE
+            },
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          }
+        );
 
-    res.json(response.data);
+        return response.data.realms.map(r => ({
+          ...r,
+          region
+        }));
+      })
+    );
+
+    res.json({
+      realms: results.flat()
+    });
 
   } catch (error) {
     console.error('Error fetching realms:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: 'Failed to fetch realms',
-      message: error.message
-    });
+    res.status(500).json({ error: 'Failed to fetch realms' });
   }
 });
 
