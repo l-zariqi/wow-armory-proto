@@ -482,9 +482,7 @@ const WoWArmory = () => {
                 boxShadow: 'inset 0 2px 20px rgba(0,0,0,0.8)'
               }}>
                 <CharacterModel
-                  region={profile.realm?.slug?.split('-')[0] || "us"}
-                  realmSlug={profile.realm?.slug}
-                  characterName={profile.name}
+                  media={characterData.media}
                 />
               </div>
               <div className="w-full space-y-2 mb-4">

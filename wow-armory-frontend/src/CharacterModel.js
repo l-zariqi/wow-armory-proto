@@ -1,75 +1,36 @@
-import React, { useEffect, useRef } from "react";
+import React, { useMemo, useState } from "react";
 
-let wowheadScriptLoading = false;
+const CharacterModel = ({ media }) => {
+  const imageUrls = useMemo(() => {
+    const assets = media?.assets || [];
+    const preferredKeys = ["main-raw", "main", "inset", "avatar"];
 
-const loadWowheadScript = () => {
-  return new Promise((resolve) => {
-    // If already loaded
-    if (window.$WowheadPower) {
-      resolve();
-      return;
-    }
+    return preferredKeys
+      .map((key) => assets.find((asset) => asset.key === key)?.value)
+      .filter(Boolean);
+  }, [media]);
+  const [imageIndex, setImageIndex] = useState(0);
+  const imageUrl = imageUrls[imageIndex];
 
-    // If already loading, wait for it
-    if (wowheadScriptLoading) {
-      const interval = setInterval(() => {
-        if (window.$WowheadPower) {
-          clearInterval(interval);
-          resolve();
-        }
-      }, 100);
-      return;
-    }
-
-    wowheadScriptLoading = true;
-
-    const script = document.createElement("script");
-    script.src = "https://wow.zamimg.com/widgets/power.js";
-    script.async = true;
-    script.onload = () => resolve();
-
-    document.body.appendChild(script);
-  });
-};
-
-const CharacterModel = ({ region, realmSlug, characterName }) => {
-  const modelRef = useRef();
-
-  useEffect(() => {
-    if (!characterName || !realmSlug || !region) return;
-
-    const renderModel = async () => {
-      await loadWowheadScript();
-
-      if (!modelRef.current) return;
-
-      // Clear previous model
-      modelRef.current.innerHTML = "";
-
-      const div = document.createElement("div");
-      div.className = "wowhead-model";
-      div.setAttribute(
-        "data-wowhead-model",
-        `character=${characterName}&realm=${realmSlug}&region=${region.toLowerCase()}&game=classic`
-      );
-
-      modelRef.current.appendChild(div);
-
-      if (window.$WowheadPower) {
-        window.$WowheadPower.refreshLinks();
-      }
-    };
-
-    renderModel();
-  }, [characterName, realmSlug, region]);
+  if (!imageUrl) {
+    return (
+      <div className="w-full h-full flex items-center justify-center text-gray-400 text-center p-4">
+        Character image unavailable
+      </div>
+    );
+  }
 
   return (
-    <div
-      ref={modelRef}
-      className="w-full h-full flex items-center justify-center text-gray-400"
-    >
-      Loading Model...
-    </div>
+    <img
+      src={imageUrl}
+      alt="Character render"
+      className="w-full h-full object-contain"
+      style={{ transform: "scale(2.75)" }}
+      referrerPolicy="no-referrer"
+      onError={() => {
+        setImageIndex((currentIndex) => currentIndex + 1);
+      }}
+    />
   );
 };
 
