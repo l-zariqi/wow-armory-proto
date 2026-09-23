@@ -17,15 +17,6 @@ const WoWArmory = () => {
 
   const API_BASE = 'http://localhost:3001/api';
 
-  // Refresh Wowhead tooltips when character data changes
-  useEffect(() => {
-    if (characterData && window.$WowheadPower) {
-      setTimeout(() => {
-        window.$WowheadPower.refreshLinks();
-      }, 100);
-    }
-  }, [characterData]);
-
   // Fetch realms on mount and when version changes
   useEffect(() => {
     fetchRealms();
@@ -33,26 +24,25 @@ const WoWArmory = () => {
 
   const fetchRealms = async () => {
     try {
-      const [usResponse, euResponse] = await Promise.all([
-        fetch(`${API_BASE}/realms?region=us&version=${selectedVersion}`),
-        fetch(`${API_BASE}/realms?region=eu&version=${selectedVersion}`)
-      ]);
+      const response = await fetch(`${API_BASE}/realms?version=${selectedVersion}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch realms');
+      }
 
-      const usData = await usResponse.json();
-      const euData = await euResponse.json();
-
-      const usRealms = (usData.realms || []).map(r => ({ ...r, region: 'US' }));
-      const euRealms = (euData.realms || []).map(r => ({ ...r, region: 'EU' }));
-
-      setRealms([...usRealms, ...euRealms].sort((a, b) => a.name.localeCompare(b.name)));
+      const data = await response.json();
+      setRealms((data.realms || []).sort((a, b) =>
+        `${a.name} ${a.region}`.localeCompare(`${b.name} ${b.region}`)
+      ));
     } catch (err) {
       console.error('Failed to fetch realms:', err);
     }
   };
 
-  const filteredRealms = realms.filter(realm =>
-    realm.name.toLowerCase().includes(realmSearch.toLowerCase())
-  );
+  const normalizedRealmSearch = realmSearch.trim().toLowerCase();
+  const filteredRealms = realms.filter(realm => {
+    const searchableText = `${realm.name} ${realm.slug} ${realm.region}`.toLowerCase();
+    return searchableText.includes(normalizedRealmSearch);
+  });
 
   const handleRealmSelect = (realm) => {
     setSelectedRealm(`${realm.region.toLowerCase()}:${realm.slug}`);
@@ -164,36 +154,6 @@ const WoWArmory = () => {
     const itemLevel = item.level?.value || item.item?.level || 0;
     const enchantText = enchant?.display_string?.replace(/^(Enchant(ed)?:?\s*|Enchant\s+\w+\s+-\s*)/i, '') || '';
     
-    // Build Wowhead data attributes according to the official documentation
-    let wowheadData = `item=${itemId}`;
-    
-    // Add domain for correct game version
-    if (selectedVersion === 'tbc-anniversary') {
-      wowheadData += '&domain=nether'; // TBC Classic domain
-    } else {
-      wowheadData += '&domain=classic'; // Classic Era domain
-    }
-    
-    // Add gems if sockets exist (use 0 for empty sockets)
-    const sockets = item.sockets || [];
-    if (sockets.length > 0) {
-      const gemIds = sockets.map(socket => socket.gem?.item?.id || 0).join(':');
-      if (gemIds !== '0') { // Only add if there's at least one gem
-        wowheadData += `&gems=${gemIds}`;
-      }
-    }
-    
-    // Add enchant if exists
-    if (enchant?.enchantment_id) {
-      wowheadData += `&ench=${enchant.enchantment_id}`;
-    }
-    
-    // Add item set pieces if applicable
-    if (item.set?.items && item.set.items.length > 0) {
-      const setPieces = item.set.items.map(setItem => setItem.id).join(':');
-      wowheadData += `&pcs=${setPieces}`;
-    }
-
     // Determine the CSS class for the quality color
     const qualityClass = `q${item.quality?.type === 'EPIC' ? '4' : item.quality?.type === 'RARE' ? '3' : item.quality?.type === 'UNCOMMON' ? '2' : item.quality?.type === 'LEGENDARY' ? '5' : '1'}`;
 
@@ -202,18 +162,19 @@ const WoWArmory = () => {
         <div className="relative">
           <a
             href={`https://www.wowhead.com/${selectedVersion === 'tbc-anniversary' ? 'tbc' : 'classic'}/item=${itemId}`}
-            data-wowhead={wowheadData}
             className={`${qualityClass} relative w-16 h-16 rounded border-2 bg-black bg-opacity-60 cursor-pointer block overflow-hidden flex-shrink-0`}
             style={{ borderColor: getQualityColor(item.quality?.type) }}
             target="_blank"
             rel="noopener noreferrer"
           >
-            <img
-              src={iconUrl}
-              alt={item.name}
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                e.target.src = 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
+            <div
+              role="img"
+              aria-label={item.name}
+              className="absolute inset-0 bg-center bg-no-repeat"
+              style={{
+                backgroundImage: `url("${iconUrl}")`,
+                backgroundColor: '#111',
+                backgroundSize: 'cover'
               }}
             />
             {itemLevel > 0 && (
@@ -225,9 +186,9 @@ const WoWArmory = () => {
         </div>
         
         {showName && (
-          <div className={`flex flex-col ${alignRight ? 'items-end' : 'items-start'}`}>
+          <div className={`min-w-0 flex-1 flex flex-col ${alignRight ? 'items-end' : 'items-start'}`}>
             <span
-              className={`text-base font-sans ${alignRight ? 'text-right' : ''}`}
+              className={`text-base font-sans break-words ${alignRight ? 'text-right' : ''}`}
               style={{ color: getQualityColor(item.quality?.type) }}
             >
               {item.name}
@@ -345,6 +306,7 @@ const WoWArmory = () => {
                 value={realmSearch}
                 onChange={(e) => {
                   setRealmSearch(e.target.value);
+                  setSelectedRealm('');
                   setShowRealmDropdown(true);
                 }}
                 onFocus={() => setShowRealmDropdown(true)}
@@ -453,7 +415,34 @@ const WoWArmory = () => {
                 )}
               </div>
             </div>
-            <button
+            <div className="flex items-center gap-2">
+              <a
+                href={(() => {
+                  const [region, selectedRealmSlug] = selectedRealm.split(':');
+                  const logsHost = selectedVersion === 'tbc-anniversary'
+                    ? 'fresh.warcraftlogs.com'
+                    : 'vanilla.warcraftlogs.com';
+                  const realmSlug = profile.realm?.slug || selectedRealmSlug;
+                  return `https://${logsHost}/character/${region}/${realmSlug}/${profile.name}`;
+                })()}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Open Warcraft Logs"
+                title="Open Warcraft Logs"
+                className="text-orange-400 hover:text-orange-300 transition-colors p-2 rounded"
+                style={{
+                  background: 'linear-gradient(to bottom, #2d2d2d, #1a1a1a)',
+                  border: '2px solid #3d3d3d',
+                  boxShadow: 'inset 0 1px 2px rgba(255,255,255,0.1)'
+                }}
+              >
+                <img
+                  src="/assets/icons/warcraft-logs.png"
+                  alt=""
+                  className="w-6 h-6 object-contain"
+                />
+              </a>
+              <button
               onClick={() => {
                 setShowCharacter(false);
                 setCharacterData(null);
@@ -466,7 +455,8 @@ const WoWArmory = () => {
               }}
             >
               <X size={24} />
-            </button>
+              </button>
+            </div>
           </div>
         </div>
 

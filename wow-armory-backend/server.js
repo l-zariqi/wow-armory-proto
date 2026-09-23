@@ -35,7 +35,7 @@ const getNamespace = (version, region, type = 'profile') => {
   }
 };
 
-const getItemMediaNamespace = (region) => `static-${region}`;
+const getItemMediaNamespace = (version, region) => `static-${version === 'tbc-anniversary' ? 'classicann' : 'classic1x'}-${region}`;
 
 let accessToken = null;
 let tokenExpiry = null;
@@ -166,14 +166,16 @@ app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
             const mediaUrl = `https://${region}.api.blizzard.com/data/wow/media/item/${item.media.id}`;
             const mediaResponse = await axios.get(mediaUrl, {
               params: {
-                namespace: getItemMediaNamespace(region),
+                namespace: getItemMediaNamespace(version, region),
                 locale: LOCALE
               },
               headers: {
                 Authorization: `Bearer ${token}`
               }
             });
-            item.icon = mediaResponse.data.assets?.[0]?.value || null;
+            const iconAsset = mediaResponse.data.assets?.find(asset => asset.key === 'icon')
+              || mediaResponse.data.assets?.[0];
+            item.icon = iconAsset?.value?.replace(/^http:\/\//, 'https://') || null;
           }
         } catch (err) {
           console.log(`Could not fetch media for item ${item.item?.id}`);
@@ -262,7 +264,11 @@ app.get('/api/realms', async (req, res) => {
   try {
     const token = await getAccessToken();
     const version = req.query.version || 'classic-era';
-    const regions = ['us', 'eu'];
+    const requestedRegion = req.query.region?.toLowerCase();
+    const regions = requestedRegion ? [requestedRegion] : ['us', 'eu'];
+    if (regions.some(region => !['us', 'eu'].includes(region))) {
+      return res.status(400).json({ error: 'Region must be us or eu' });
+    }
     const results = await Promise.all(
       regions.map(async (region) => {
         const response = await axios.get(
