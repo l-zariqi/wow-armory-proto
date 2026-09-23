@@ -37,6 +37,111 @@ const getNamespace = (version, region, type = 'profile') => {
 
 const getItemMediaNamespace = (version, region) => `static-${version === 'tbc-anniversary' ? 'classicann' : 'classic1x'}-${region}`;
 
+const GEAR_SCORE_SLOT_MODIFIERS = {
+  HEAD: 1,
+  NECK: 0.5625,
+  SHOULDER: 0.75,
+  CHEST: 1,
+  ROBE: 1,
+  WAIST: 0.75,
+  LEGS: 1,
+  FEET: 0.75,
+  WRIST: 0.5625,
+  HANDS: 0.75,
+  FINGER: 0.5625,
+  FINGER_1: 0.5625,
+  FINGER_2: 0.5625,
+  BACK: 0.5625,
+  SHIRT: 0,
+  TABARD: 0,
+  TRINKET: 0.5625,
+  TRINKET_1: 0.5625,
+  TRINKET_2: 0.5625,
+  MAIN_HAND: 1,
+  OFF_HAND: 1,
+  RANGED: 0.3164,
+  RELIC: 0.3164
+};
+
+const GEAR_SCORE_QUALITY = {
+  POOR: 0,
+  COMMON: 1,
+  UNCOMMON: 2,
+  RARE: 3,
+  EPIC: 4,
+  LEGENDARY: 5,
+  ARTIFACT: 6,
+  HEIRLOOM: 7
+};
+
+const calculateGearScore = (items = []) => {
+  let score = 0;
+  let hasTwoHandedWeapon = false;
+  let hasMainHand = false;
+  let hasOffHand = false;
+
+  const scoredItems = items.map(item => {
+    const slot = item.slot?.type || item.slot?.name;
+    const itemLevel = Number(item.level?.value || item.level || 0);
+    const rarityName = item.quality?.type || item.quality?.name;
+    let rarity = GEAR_SCORE_QUALITY[rarityName] ?? Number(item.quality?.value);
+    let qualityScale = 1;
+    let adjustedItemLevel = itemLevel;
+    const inventoryType = item.item?.inventory_type || item.inventory_type;
+
+    if (inventoryType === 'INVTYPE_2HWEAPON' || item.equipment_slot === 'TWO_HAND') {
+      hasTwoHandedWeapon = true;
+    }
+    if (slot === 'MAIN_HAND') hasMainHand = true;
+    if (slot === 'OFF_HAND') hasOffHand = true;
+
+    if (!Number.isFinite(rarity) || !itemLevel || !slot || GEAR_SCORE_SLOT_MODIFIERS[slot] === undefined) {
+      return 0;
+    }
+    if (rarity === 5) {
+      qualityScale = 1.3;
+      rarity = 4;
+    } else if (rarity === 1 || rarity === 0) {
+      qualityScale = 0.005;
+      rarity = 2;
+    } else if (rarity === 7) {
+      rarity = 3;
+      adjustedItemLevel = 187.05;
+    }
+
+    let formula;
+    if (adjustedItemLevel < 100 && rarity === 4) {
+      formula = { A: 0.25, B: 1.6275 };
+    } else if (adjustedItemLevel < 168 && rarity === 4) {
+      formula = { A: 26, B: 1.2 };
+    } else if (adjustedItemLevel < 148 && rarity === 3) {
+      formula = { A: 0.75, B: 1.8 };
+    } else if (adjustedItemLevel < 138 && rarity === 2) {
+      formula = { A: 8, B: 2 };
+    } else if (adjustedItemLevel <= 120) {
+      formula = { A: 0, B: 2.25 };
+    } else {
+      formula = {
+        4: { A: 91.45, B: 0.65 },
+        3: { A: 81.375, B: 0.8125 },
+        2: { A: 73, B: 1 }
+      }[rarity];
+    }
+
+    if (!formula || rarity < 2 || rarity > 4) return 0;
+    const rawScore = ((adjustedItemLevel - formula.A) / formula.B)
+      * GEAR_SCORE_SLOT_MODIFIERS[slot] * 1.8618 * qualityScale;
+    return Math.max(0, Math.floor(rawScore));
+  });
+
+  score = scoredItems.reduce((total, itemScore) => total + itemScore, 0);
+  if (hasTwoHandedWeapon && hasMainHand && hasOffHand) {
+    const mainHandIndex = items.findIndex(item => item.slot?.type === 'MAIN_HAND');
+    score -= Math.floor((scoredItems[mainHandIndex] || 0) * 0.5);
+  }
+  return Math.floor(score);
+};
+
 let accessToken = null;
 let tokenExpiry = null;
 
@@ -185,6 +290,7 @@ app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
     );
 
     equipmentResponse.data.equipped_items = equipmentWithIcons;
+    profileResponse.data.gearscore = calculateGearScore(equipmentWithIcons);
 
     const statsUrl = `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}/statistics`;
     

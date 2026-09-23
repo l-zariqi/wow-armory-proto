@@ -14,13 +14,51 @@ const WoWArmory = () => {
   const [characterData, setCharacterData] = useState(null);
   const [realms, setRealms] = useState([]);
   const [showRealmDropdown, setShowRealmDropdown] = useState(false);
+  const [characterSuggestions, setCharacterSuggestions] = useState([]);
+  const [showCharacterDropdown, setShowCharacterDropdown] = useState(false);
 
   const API_BASE = 'http://localhost:3001/api';
+
+  useEffect(() => {
+    window.whTooltips = {
+      colorLinks: true,
+      iconizeLinks: false,
+      renameLinks: false
+    };
+
+    if (!document.querySelector('script[data-wowhead-tooltips]')) {
+      const script = document.createElement('script');
+      script.src = 'https://wow.zamimg.com/js/tooltips.js';
+      script.async = true;
+      script.dataset.wowheadTooltips = 'true';
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (window.WH?.Tooltips?.refreshLinks) {
+      window.WH.Tooltips.refreshLinks();
+    }
+  }, [characterData, selectedVersion]);
 
   // Fetch realms on mount and when version changes
   useEffect(() => {
     fetchRealms();
   }, [selectedVersion]);
+
+  useEffect(() => {
+    try {
+      const savedCharacters = window.localStorage.getItem('wow-armory-character-suggestions');
+      if (savedCharacters) {
+        const parsedCharacters = JSON.parse(savedCharacters);
+        if (Array.isArray(parsedCharacters)) {
+          setCharacterSuggestions(parsedCharacters);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load character suggestions:', err);
+    }
+  }, []);
 
   const fetchRealms = async () => {
     try {
@@ -43,26 +81,62 @@ const WoWArmory = () => {
     const searchableText = `${realm.name} ${realm.slug} ${realm.region}`.toLowerCase();
     return searchableText.includes(normalizedRealmSearch);
   });
+  const normalizedCharacterSearch = searchQuery.trim().toLowerCase();
+  const filteredCharacterSuggestions = characterSuggestions.filter(suggestion => {
+    const matchesVersion = suggestion.version === selectedVersion;
+    const matchesRealm = !selectedRealm || suggestion.selectedRealm === selectedRealm;
+    const matchesName = suggestion.name.toLowerCase().includes(normalizedCharacterSearch);
+    return matchesVersion && matchesRealm && matchesName;
+  });
 
   const handleRealmSelect = (realm) => {
     setSelectedRealm(`${realm.region.toLowerCase()}:${realm.slug}`);
-    setRealmSearch(`${realm.name} (${realm.region})`);
+    setRealmSearch(`${realm.name} (${realm.region.toUpperCase()})`);
     setShowRealmDropdown(false);
   };
 
-  const handleSearch = async () => {
-    if (!searchQuery || !selectedRealm) {
-      setError('Please enter a character name and select a realm');
-      return;
-    }
+  const getRegionLabel = (region) => {
+    const regionCode = region.toUpperCase();
+    const flag = regionCode === 'US' ? '🇺🇸' : regionCode === 'EU' ? '🇪🇺' : '';
+    return `${flag} ${regionCode}`.trim();
+  };
 
+  const saveCharacterSuggestion = (character) => {
+    const updatedSuggestions = [
+      character,
+      ...characterSuggestions.filter(savedCharacter =>
+        !(savedCharacter.name.toLowerCase() === character.name.toLowerCase()
+          && savedCharacter.selectedRealm === character.selectedRealm
+          && savedCharacter.version === character.version)
+      )
+    ].slice(0, 10);
+
+    setCharacterSuggestions(updatedSuggestions);
+    try {
+      window.localStorage.setItem(
+        'wow-armory-character-suggestions',
+        JSON.stringify(updatedSuggestions)
+      );
+    } catch (err) {
+      console.error('Failed to save character suggestion:', err);
+    }
+  };
+
+  const handleCharacterSelect = (suggestion) => {
+    setSearchQuery(suggestion.name);
+    setSelectedRealm(suggestion.selectedRealm);
+    setRealmSearch(suggestion.realmLabel.replace(/\((us|eu)\)/i, (_, region) => `(${getRegionLabel(region)})`));
+    setShowCharacterDropdown(false);
+  };
+
+  const loadCharacter = async (characterName, realm, version, realmLabel) => {
     setLoading(true);
     setError(null);
 
     try {
-      const [region, realmSlug] = selectedRealm.split(':');
+      const [region, realmSlug] = realm.split(':');
       const response = await fetch(
-        `${API_BASE}/character/${region}/${realmSlug}/${searchQuery}?version=${selectedVersion}`
+        `${API_BASE}/character/${region}/${realmSlug}/${characterName}?version=${version}`
       );
 
       if (!response.ok) {
@@ -74,11 +148,31 @@ const WoWArmory = () => {
       console.log('Character data:', data);
       setCharacterData(data);
       setShowCharacter(true);
+      setSearchQuery(characterName);
+      setSelectedRealm(realm);
+      setSelectedVersion(version);
+      setRealmSearch(realmLabel);
+      saveCharacterSuggestion({
+        name: characterName.trim(),
+        selectedRealm: realm,
+        realmLabel,
+        version
+      });
+      setShowCharacterDropdown(false);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery || !selectedRealm) {
+      setError('Please enter a character name and select a realm');
+      return;
+    }
+
+    await loadCharacter(searchQuery, selectedRealm, selectedVersion, realmSearch);
   };
 
   const getQualityColor = (quality) => {
@@ -128,14 +222,6 @@ const WoWArmory = () => {
     return characterData.equipment.equipped_items.find(item => item.slot.type === slot);
   };
 
-  const calculateAverageItemLevel = () => {
-    if (!characterData?.equipment?.equipped_items) return 0;
-    const items = characterData.equipment.equipped_items;
-    if (items.length === 0) return 0;
-    const total = items.reduce((sum, item) => sum + (item.level?.value || 0), 0);
-    return Math.round(total / items.length);
-  };
-
   const GearSlot = ({ slot, showName = false, alignRight = false }) => {
     const item = getEquipmentBySlot(slot);
 
@@ -162,6 +248,7 @@ const WoWArmory = () => {
         <div className="relative">
           <a
             href={`https://www.wowhead.com/${selectedVersion === 'tbc-anniversary' ? 'tbc' : 'classic'}/item=${itemId}`}
+            data-wowhead={`item=${itemId}&domain=${selectedVersion === 'tbc-anniversary' ? 'tbc' : 'classic'}`}
             className={`${qualityClass} relative w-16 h-16 rounded border-2 bg-black bg-opacity-60 cursor-pointer block overflow-hidden flex-shrink-0`}
             style={{ borderColor: getQualityColor(item.quality?.type) }}
             target="_blank"
@@ -226,7 +313,7 @@ const WoWArmory = () => {
                 <img 
                   src="/assets/logos/WOW_BCC_Anniversary_Logo.png" 
                   alt="WoW Burning Crusade Classic Anniversary Edition"
-                  className="h-32 mb-2"
+                  className="h-40 mb-2"
                   style={{
                     filter: 'drop-shadow(2px 2px 4px rgba(0,0,0,0.8))'
                   }}
@@ -237,7 +324,7 @@ const WoWArmory = () => {
                 <img 
                   src="/assets/logos/WOW_Classic_Logo.png" 
                   alt="WoW Classic Era"
-                  className="h-32 mb-2"
+                  className="h-40 mb-2"
                   style={{
                     filter: 'drop-shadow(2px 2px 4px rgba(0,0,0,0.8))'
                   }}
@@ -257,6 +344,7 @@ const WoWArmory = () => {
               <button
                 onClick={() => {
                   setSelectedVersion('classic-era');
+                  setSearchQuery('');
                   setSelectedRealm('');
                   setRealmSearch('');
                 }}
@@ -273,6 +361,7 @@ const WoWArmory = () => {
               <button
                 onClick={() => {
                   setSelectedVersion('tbc-anniversary');
+                  setSearchQuery('');
                   setSelectedRealm('');
                   setRealmSearch('');
                 }}
@@ -287,19 +376,61 @@ const WoWArmory = () => {
                 Anniversary (TBC)
               </button>
             </div>
-            <input
-              type="text"
-              placeholder="Character Name"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-              className="w-full px-4 py-3 rounded border-2 bg-black bg-opacity-60 text-white placeholder-gray-500 focus:outline-none font-sans"
-              style={{
-                borderColor: '#8B7355',
-                boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.8)'
+            <div
+              className="relative"
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget)) {
+                  setShowCharacterDropdown(false);
+                }
               }}
-            />
-            <div className="relative">
+            >
+              <input
+                type="text"
+                placeholder="Character Name"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setShowCharacterDropdown(true);
+                }}
+                onFocus={() => setShowCharacterDropdown(true)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                className="w-full px-4 py-3 rounded border-2 bg-black bg-opacity-60 text-white placeholder-gray-500 focus:outline-none font-sans"
+                style={{
+                  borderColor: '#8B7355',
+                  boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.8)'
+                }}
+              />
+              {showCharacterDropdown && filteredCharacterSuggestions.length > 0 && (
+                <div
+                  className="absolute z-10 w-full mt-1 rounded border-2 bg-black bg-opacity-95 max-h-60 overflow-y-auto"
+                  style={{
+                    borderColor: '#8B7355',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.9)'
+                  }}
+                >
+                  {filteredCharacterSuggestions.map(suggestion => (
+                    <button
+                      type="button"
+                      key={`${suggestion.version}-${suggestion.selectedRealm}-${suggestion.name}`}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleCharacterSelect(suggestion)}
+                      className="w-full px-4 py-2 cursor-pointer hover:bg-gray-800 text-left text-white flex justify-between items-center font-sans"
+                    >
+                      <span>{suggestion.name}</span>
+                      <span className="text-xs text-gray-400">{suggestion.realmLabel}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div
+              className="relative"
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget)) {
+                  setShowRealmDropdown(false);
+                }
+              }}
+            >
               <input
                 type="text"
                 placeholder="Search Realm (US & EU)"
@@ -327,11 +458,12 @@ const WoWArmory = () => {
                   {filteredRealms.slice(0, 50).map(realm => (
                     <div
                       key={`${realm.region}-${realm.id}`}
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleRealmSelect(realm)}
                       className="px-4 py-2 cursor-pointer hover:bg-gray-800 text-white flex justify-between items-center font-sans"
                     >
                       <span>{realm.name}</span>
-                      <span className="text-xs text-gray-400">{realm.region}</span>
+                      <span className="text-xs text-gray-400">{getRegionLabel(realm.region)}</span>
                     </div>
                   ))}
                 </div>
@@ -361,6 +493,11 @@ const WoWArmory = () => {
   const profile = characterData?.profile;
 
   if (!profile) return null;
+
+  const factionName = profile.faction?.name || '';
+  const isAlliance = factionName.toLowerCase() === 'alliance';
+  const factionIcon = isAlliance ? '/assets/icons/alliance.png' : '/assets/icons/horde.png';
+  const factionColor = isAlliance ? '#4da6ff' : '#ff4d4d';
 
   return (
     <div className="min-h-screen p-4 flex items-center justify-center" style={{
@@ -401,11 +538,16 @@ const WoWArmory = () => {
                 />
               </div>
               <div>
-                <h2 className="text-4xl font-bold" style={{
+                <h2 className="text-4xl font-bold flex items-center gap-2" style={{
                   color: getClassColor(profile.character_class?.name),
                   textShadow: '2px 2px 4px rgba(0,0,0,0.8)'
                 }}>
-                  {profile.name}
+                  <span>{profile.name}</span>
+                  <img
+                    src={factionIcon}
+                    alt={`${factionName} faction`}
+                    className="w-8 h-8 object-contain"
+                  />
                 </h2>
                 <p className="text-lg font-sans" style={{ color: '#ffd700' }}>
                   Level {profile.level} {profile.race?.name} {profile.character_class?.name}
@@ -477,34 +619,32 @@ const WoWArmory = () => {
 
             {/* Center - Character Model & Stats */}
             <div className="flex flex-col items-center justify-between">
-              <div className="w-72 h-96 rounded border-2 mb-6 bg-gradient-to-b from-gray-800 to-gray-900 flex items-center justify-center overflow-hidden" style={{
-                borderColor: '#3d3d3d',
-                boxShadow: 'inset 0 2px 20px rgba(0,0,0,0.8)'
-              }}>
+              <div className="w-96 h-[32rem] mb-6 flex items-center justify-center overflow-hidden">
                 <CharacterModel
                   media={characterData.media}
                 />
               </div>
-              <div className="w-full space-y-2 mb-4">
-                <div className="flex justify-between items-center px-3 font-sans">
-                  <span className="text-sm text-gray-500">Equipped iLvl</span>
-                  <span className="text-base text-gray-400">{profile.equipped_item_level || 0}</span>
-                  <span className="text-sm text-gray-500">Average iLvl</span>
-                  <span className="text-base text-gray-400">{calculateAverageItemLevel()}</span>
-                </div>
-              </div>
-
-              <div className="w-full rounded border-2 p-4 font-sans" style={{
+              <div className="w-full rounded border-2 p-4 font-sans space-y-2 mb-4" style={{
                 background: 'linear-gradient(to bottom, #0d0d0d, #000000)',
                 borderColor: '#3d3d3d'
               }}>
-                <div className="text-center text-gray-500 text-sm mb-2">
-                  <span className="text-center text-gray-500">Realm: </span>
-                  <span className="text-base text-gray-400">{profile.realm?.name}</span>
-                </div>
-                <div className="text-center text-gray-500 text-sm">
-                  <span className="text-center text-gray-500">Faction: </span>
-                  <span className="text-base text-gray-400">{profile.faction?.name}</span>
+                <div className="grid grid-cols-2 gap-4 px-3 text-sm">
+                  <div className="text-left">
+                    <div className="text-base text-gray-500">
+                      Equipped iLvl: <span className="text-base text-gray-400">{profile.equipped_item_level || 0}</span>
+                    </div>
+                    <div className="mt-2 text-base text-gray-500">
+                      Realm: <span className="text-base text-gray-400">{profile.realm?.name}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-base text-gray-500">
+                      Gearscore: <span className="text-base text-gray-400">{profile.gearscore || profile.gear_score || 'N/A'}</span>
+                    </div>
+                    <div className="mt-2 text-base text-gray-500">
+                      Faction: <span className="text-base" style={{ color: factionColor }}>{factionName}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
