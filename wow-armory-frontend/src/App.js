@@ -17,22 +17,12 @@ const WoWArmory = () => {
 
   const API_BASE = 'http://localhost:3001/api';
 
-  // Load Wowhead tooltip script
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://wow.zamimg.com/widgets/power.js';
-    script.async = true;
-    document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-    };
-  }, []);
-
   // Refresh Wowhead tooltips when character data changes
   useEffect(() => {
     if (characterData && window.$WowheadPower) {
-      window.$WowheadPower.refreshLinks();
+      setTimeout(() => {
+        window.$WowheadPower.refreshLinks();
+      }, 100);
     }
   }, [characterData]);
 
@@ -43,7 +33,6 @@ const WoWArmory = () => {
 
   const fetchRealms = async () => {
     try {
-      // Fetch both US and EU realms
       const [usResponse, euResponse] = await Promise.all([
         fetch(`${API_BASE}/realms?region=us&version=${selectedVersion}`),
         fetch(`${API_BASE}/realms?region=eu&version=${selectedVersion}`)
@@ -170,40 +159,71 @@ const WoWArmory = () => {
     }
 
     const itemId = item.item?.id;
-    const wowheadBase =
-      selectedVersion === 'tbc-anniversary'
-        ? 'https://www.wowhead.com/tbc/item='
-        : 'https://www.wowhead.com/classic/item=';
-    const wowheadUrl = `${wowheadBase}${itemId}`;
     const iconUrl = item.icon || 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
     const enchant = item.enchantments?.[0];
     const itemLevel = item.level?.value || item.item?.level || 0;
     const enchantText = enchant?.display_string?.replace(/^(Enchant(ed)?:?\s*|Enchant\s+\w+\s+-\s*)/i, '') || '';
-    const relAttr = enchant?.enchantment_id ? `enchantment=${enchant.enchantment_id}` : undefined;
+    
+    // Build Wowhead data attributes according to the official documentation
+    let wowheadData = `item=${itemId}`;
+    
+    // Add domain for correct game version
+    if (selectedVersion === 'tbc-anniversary') {
+      wowheadData += '&domain=nether'; // TBC Classic domain
+    } else {
+      wowheadData += '&domain=classic'; // Classic Era domain
+    }
+    
+    // Add gems if sockets exist (use 0 for empty sockets)
+    const sockets = item.sockets || [];
+    if (sockets.length > 0) {
+      const gemIds = sockets.map(socket => socket.gem?.item?.id || 0).join(':');
+      if (gemIds !== '0') { // Only add if there's at least one gem
+        wowheadData += `&gems=${gemIds}`;
+      }
+    }
+    
+    // Add enchant if exists
+    if (enchant?.enchantment_id) {
+      wowheadData += `&ench=${enchant.enchantment_id}`;
+    }
+    
+    // Add item set pieces if applicable
+    if (item.set?.items && item.set.items.length > 0) {
+      const setPieces = item.set.items.map(setItem => setItem.id).join(':');
+      wowheadData += `&pcs=${setPieces}`;
+    }
+
+    // Determine the CSS class for the quality color
+    const qualityClass = `q${item.quality?.type === 'EPIC' ? '4' : item.quality?.type === 'RARE' ? '3' : item.quality?.type === 'UNCOMMON' ? '2' : item.quality?.type === 'LEGENDARY' ? '5' : '1'}`;
 
     return (
       <div className={`flex items-center gap-4 ${alignRight ? 'flex-row-reverse' : ''}`}>
-        <a
-          href={wowheadUrl}
-          data-wowhead={`item=${itemId}${relAttr ? `&${relAttr}` : ''}`}
-          target="_blank"
-          className="relative w-16 h-16 rounded border-2 bg-black bg-opacity-60 group cursor-pointer block overflow-hidden flex-shrink-0"
-          style={{ borderColor: getQualityColor(item.quality?.type) }}
-        >
-          <img
-            src={iconUrl}
-            alt={item.name}
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              e.target.src = 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
-            }}
-          />
-          {itemLevel > 0 && (
-            <div className="absolute bottom-0 right-0 bg-black bg-opacity-80 px-1 text-xs font-bold text-white rounded-tl">
-              {itemLevel}
-            </div>
-          )}
-        </a>
+        <div className="relative">
+          <a
+            href={`https://www.wowhead.com/${selectedVersion === 'tbc-anniversary' ? 'tbc' : 'classic'}/item=${itemId}`}
+            data-wowhead={wowheadData}
+            className={`${qualityClass} relative w-16 h-16 rounded border-2 bg-black bg-opacity-60 cursor-pointer block overflow-hidden flex-shrink-0`}
+            style={{ borderColor: getQualityColor(item.quality?.type) }}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <img
+              src={iconUrl}
+              alt={item.name}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                e.target.src = 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
+              }}
+            />
+            {itemLevel > 0 && (
+              <div className="absolute bottom-0 right-0 bg-black bg-opacity-80 px-1 text-xs font-bold text-white rounded-tl">
+                {itemLevel}
+              </div>
+            )}
+          </a>
+        </div>
+        
         {showName && (
           <div className={`flex flex-col ${alignRight ? 'items-end' : 'items-start'}`}>
             <span
@@ -429,7 +449,7 @@ const WoWArmory = () => {
                   Level {profile.level} {profile.race?.name} {profile.character_class?.name}
                 </p>
                 {profile.guild && (
-                  <p className="text-sm text-blue-400 font-sans">&lt;{profile.guild.name}&gt;</p>
+                  <p className="text-lg text-blue-400 font-sans">&lt;{profile.guild.name}&gt;</p>
                 )}
               </div>
             </div>
@@ -467,7 +487,6 @@ const WoWArmory = () => {
 
             {/* Center - Character Model & Stats */}
             <div className="flex flex-col items-center justify-between">
-              {/* Center - 3D Model */}
               <div className="w-72 h-96 rounded border-2 mb-6 bg-gradient-to-b from-gray-800 to-gray-900 flex items-center justify-center overflow-hidden" style={{
                 borderColor: '#3d3d3d',
                 boxShadow: 'inset 0 2px 20px rgba(0,0,0,0.8)'
@@ -476,29 +495,28 @@ const WoWArmory = () => {
                   region={profile.realm?.slug?.split('-')[0] || "us"}
                   realmSlug={profile.realm?.slug}
                   characterName={profile.name}
-                  // gameVersion={selectedVersion === "tbc-anniversary" ? "tbc" : "classic"}
                 />
               </div>
-              {/* Stats Display */}
               <div className="w-full space-y-2 mb-4">
                 <div className="flex justify-between items-center px-3 font-sans">
-                  <span className="text-base text-gray-400">{profile.equipped_item_level || 0}</span>
                   <span className="text-sm text-gray-500">Equipped iLvl</span>
-                  <span className="text-base text-gray-400">{calculateAverageItemLevel()}</span>
+                  <span className="text-base text-gray-400">{profile.equipped_item_level || 0}</span>
                   <span className="text-sm text-gray-500">Average iLvl</span>
+                  <span className="text-base text-gray-400">{calculateAverageItemLevel()}</span>
                 </div>
               </div>
 
-              {/* Base Stats */}
               <div className="w-full rounded border-2 p-4 font-sans" style={{
                 background: 'linear-gradient(to bottom, #0d0d0d, #000000)',
                 borderColor: '#3d3d3d'
               }}>
-                <div className="text-center text-gray-400 text-sm mb-2">
-                  Realm: {profile.realm?.name}
+                <div className="text-center text-gray-500 text-sm mb-2">
+                  <span className="text-center text-gray-500">Realm: </span>
+                  <span className="text-base text-gray-400">{profile.realm?.name}</span>
                 </div>
-                <div className="text-center text-gray-400 text-sm">
-                  Faction: {profile.faction?.name}
+                <div className="text-center text-gray-500 text-sm">
+                  <span className="text-center text-gray-500">Faction: </span>
+                  <span className="text-base text-gray-400">{profile.faction?.name}</span>
                 </div>
               </div>
             </div>

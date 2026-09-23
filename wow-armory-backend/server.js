@@ -16,15 +16,12 @@ const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const REGION = process.env.REGION || 'us';
 const LOCALE = process.env.LOCALE || 'en_US';
 
-// Check for required environment variables
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error('ERROR: CLIENT_ID and CLIENT_SECRET must be set in .env file');
   process.exit(1);
 }
 
 console.log('✓ Environment variables loaded successfully');
-console.log('✓ CLIENT_ID:', CLIENT_ID);
-console.log('✓ CLIENT_SECRET:', CLIENT_SECRET ? '***configured***' : 'MISSING');
 
 // Namespace mapping for different Classic versions
 const getNamespace = (version, region, type = 'profile') => {
@@ -38,14 +35,11 @@ const getNamespace = (version, region, type = 'profile') => {
   }
 };
 
-// Item media is always served from retail static namespace (even for Classic/TBC)
 const getItemMediaNamespace = (region) => `static-${region}`;
 
-// Token storage (in production, use Redis or similar)
 let accessToken = null;
 let tokenExpiry = null;
 
-// Get OAuth token
 async function getAccessToken() {
   if (accessToken && tokenExpiry && Date.now() < tokenExpiry) {
     return accessToken;
@@ -68,7 +62,6 @@ async function getAccessToken() {
 
     accessToken = response.data.access_token;
     tokenExpiry = Date.now() + (response.data.expires_in * 1000);
-    
     console.log('✓ Access token obtained successfully');
     return accessToken;
   } catch (error) {
@@ -77,17 +70,53 @@ async function getAccessToken() {
   }
 }
 
+// New endpoint to proxy Wowhead tooltip requests
+app.get('/api/tooltip/:version/:itemId', async (req, res) => {
+  try {
+    const { version, itemId } = req.params;
+    const { ench, gems, bonus } = req.query;
+    
+    // Map game version to Wowhead subdomain and dataEnv
+    const versionConfig = {
+      'classic-era': { subdomain: 'classic', dataEnv: 2 },
+      'classic-era-us': { subdomain: 'classic', dataEnv: 2 },
+      'classic-era-eu': { subdomain: 'classic', dataEnv: 2 },
+      'tbc-anniversary': { subdomain: 'nether', dataEnv: 5 },
+      'tbc': { subdomain: 'nether', dataEnv: 5 }
+    };
+    
+    const config = versionConfig[version] || versionConfig['tbc-anniversary'];
+    
+    // Build Wowhead tooltip API URL
+    let tooltipUrl = `https://${config.subdomain}.wowhead.com/tooltip/item/${itemId}`;
+    const params = {
+      dataEnv: config.dataEnv,
+      locale: 0
+    };
+    
+    if (ench) params.ench = ench;
+    if (gems) params.gems = gems;
+    if (bonus) params.bonus = bonus;
+    
+    const response = await axios.get(tooltipUrl, { params });
+    res.json(response.data);
+    
+  } catch (error) {
+    console.error('Error fetching tooltip:', error.message);
+    res.status(500).json({ error: 'Failed to fetch tooltip data' });
+  }
+});
+
 // Get character profile
 app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
   try {
     const { region, realm, characterName } = req.params;
-    const version = req.query.version || 'classic-era'; // classic-era or classic (anniversary)
+    const version = req.query.version || 'classic-era';
     const token = await getAccessToken();
     
     const realmSlug = realm.toLowerCase().replace(/\s+/g, '-');
     const characterSlug = characterName.toLowerCase();
 
-    // Get character profile summary
     const profileUrl = `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}`;
     
     const profileResponse = await axios.get(profileUrl, {
@@ -100,7 +129,6 @@ app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
       }
     });
 
-    // Get character media (avatar/portrait)
     const mediaUrl = `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}/character-media`;
     
     let characterMedia = null;
@@ -119,7 +147,6 @@ app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
       console.log('Character media not available');
     }
 
-    // Get character equipment
     const equipmentUrl = `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}/equipment`;
     
     const equipmentResponse = await axios.get(equipmentUrl, {
@@ -132,7 +159,6 @@ app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
       }
     });
 
-    // Fetch media/icon data for each equipped item
     const equipmentWithIcons = await Promise.all(
       (equipmentResponse.data.equipped_items || []).map(async (item) => {
         try {
@@ -158,7 +184,6 @@ app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
 
     equipmentResponse.data.equipped_items = equipmentWithIcons;
 
-    // Get character statistics
     const statsUrl = `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}/statistics`;
     
     let statsResponse;
@@ -232,7 +257,6 @@ app.get('/api/guild/:region/:realm/:guildName', async (req, res) => {
   }
 });
 
-
 // Get available realms
 app.get('/api/realms', async (req, res) => {
   try {
@@ -271,7 +295,6 @@ app.get('/api/realms', async (req, res) => {
   }
 });
 
-// Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
