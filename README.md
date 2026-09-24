@@ -129,29 +129,6 @@ npm run build
 
 This creates a `build/` directory that can be deployed or served by a static host.
 
-## 6) Useful commands
-
-From the project root:
-
-```bash
-npm start
-```
-
-From backend:
-
-```bash
-npm run dev
-npm start
-```
-
-From frontend:
-
-```bash
-npm start
-npm test
-npm run build
-```
-
 ## Troubleshooting checklist
 
 - Verify Node.js is installed: `node -v`
