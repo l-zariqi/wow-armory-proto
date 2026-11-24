@@ -12,25 +12,21 @@ const CharacterModel = ({ media }) => {
   const [imageIndex, setImageIndex] = useState(0);
   const imageUrl = imageUrls[imageIndex];
 
-  if (!imageUrl) {
-    return (
-      <div className="w-full h-full flex items-center justify-center text-gray-400 text-center p-4">
-        Character image unavailable
-      </div>
-    );
-  }
-
-  return (
+  return imageUrl ? (
     <img
       src={imageUrl}
       alt="Character render"
-      className="w-full h-full object-contain"
+      className="h-full w-full object-contain"
       style={{ transform: "scale(2.75)" }}
       referrerPolicy="no-referrer"
       onError={() => {
         setImageIndex((currentIndex) => currentIndex + 1);
       }}
     />
+  ) : (
+    <div className="flex h-full w-full items-center justify-center p-4 text-center text-gray-400">
+      Character image unavailable
+    </div>
   );
 };
 

@@ -98,6 +98,71 @@ const classicTalentTreeNames = {
   281: 'Feral Combat',
   282: 'Restoration'
 };
+const talentTreeIcons = {
+  161: 'ability_warrior_savageblow', 164: 'ability_warrior_innerrage', 163: 'inv_shield_06',
+  382: 'spell_holy_holybolt', 383: 'spell_holy_devotionaura', 381: 'spell_holy_auraoflight',
+  361: 'ability_hunter_beasttaming', 363: 'ability_marksmanship', 362: 'ability_hunter_swiftstrike',
+  182: 'ability_rogue_eviscerate', 181: 'ability_backstab', 183: 'ability_stealth',
+  201: 'spell_holy_wordfortitude', 202: 'spell_holy_guardianspirit', 203: 'spell_shadow_shadowwordpain',
+  261: 'spell_nature_lightning', 263: 'spell_nature_lightningshield', 262: 'spell_nature_magicimmunity',
+  81: 'spell_holy_magicalsentry', 41: 'spell_fire_firebolt02', 61: 'spell_frost_frostbolt02',
+  302: 'spell_shadow_deathcoil', 303: 'spell_shadow_metamorphosis', 301: 'spell_shadow_rainoffire',
+  283: 'spell_nature_starfall', 281: 'ability_racial_bearform', 282: 'spell_nature_healingtouch'
+};
+
+const getTalentTreeIcon = treeId => talentTreeIcons[treeId]
+  ? `https://wow.zamimg.com/images/wow/icons/medium/${talentTreeIcons[treeId]}.jpg`
+  : null;
+
+const fetchCharacterPvp = async (characterUrl, requestConfig, version) => {
+  try {
+    const response = await axios.get(`${characterUrl}/pvp-summary`, requestConfig);
+    const summary = response.data;
+    const character = new URL(characterUrl);
+    const bracketPrefix = `${character.pathname}/pvp-bracket/`;
+    const linkedBrackets = new Set();
+    let warning = null;
+    for (const link of summary.brackets || []) {
+      try {
+        const url = new URL(link.href, character);
+        const slug = url.pathname.slice(bracketPrefix.length);
+        if (url.origin !== character.origin || !url.pathname.startsWith(bracketPrefix)
+          || !/^[a-z0-9-]+$/.test(slug)) {
+          throw new Error('Invalid PvP bracket link');
+        }
+        linkedBrackets.add(slug);
+      } catch (error) {
+        console.error('Could not use character PvP bracket link:', error.message);
+        warning = 'Some PvP bracket data could not be loaded.';
+      }
+    }
+    const bracketsToFetch = new Set(linkedBrackets);
+    if (version === 'tbc-anniversary') {
+      ['2v2', '3v3', '5v5', 'rbg'].forEach(bracket => bracketsToFetch.add(bracket));
+    }
+    const results = await Promise.all([...bracketsToFetch].map(async bracket => {
+      try {
+        const result = await axios.get(`${characterUrl}/pvp-bracket/${bracket}`, requestConfig);
+        return { slug: bracket, data: result.data };
+      } catch (error) {
+        if (error.response?.status !== 404 || linkedBrackets.has(bracket)) {
+          console.error(`Could not fetch PvP bracket ${bracket}:`, error.response?.data || error.message);
+          warning = 'Some PvP bracket data could not be loaded.';
+        }
+        return null;
+      }
+    }));
+    return { summary, brackets: results.filter(Boolean), warning, error: null };
+  } catch (error) {
+    console.error('Could not fetch character PvP summary:', error.response?.data || error.message);
+    return {
+      summary: null,
+      error: error.response?.status === 404
+        ? 'PvP data is not available for this character.'
+        : 'Unable to load PvP data. Please try again later.'
+    };
+  }
+};
 
 const stripWowheadTooltipHtml = html => html
   .replace(/<br\s*\/?>/gi, ' ')
@@ -186,6 +251,7 @@ const fetchClassicTalentTreeData = async (version, classId) => {
         return {
           id: treeId,
           name: treeName,
+          icon: getTalentTreeIcon(treeId),
           maxPoints: version === 'classic-era' ? 51 : 61,
           backgroundImage: `https://wow.zamimg.com/images/wow/talents/backgrounds/${wowheadVersion}/${treeId}.jpg`,
           talents: talentEntries.map(talent => {
@@ -297,13 +363,27 @@ const fetchForeverTalentTreeData = async (region, classId, token) => {
             requestConfig
           );
           const backgroundId = foreverTalentBackgroundIds[classId]?.[index];
+          const firstColumn = [1, 7, 14][index];
+          if (!firstColumn) throw new Error(`Unexpected talent specialization index ${index}`);
+          const nodes = treeResponse.data.spec_talent_nodes || [];
+          const validNodes = nodes.filter(node =>
+            Number.isInteger(node.display_row) && node.display_row >= 1 && node.display_row <= 7
+            && Number.isInteger(node.display_col) && node.display_col >= firstColumn && node.display_col < firstColumn + 4
+          );
+          const invalidPositions = nodes.length - validNodes.length;
+          if (invalidPositions) {
+            console.error(`Ignoring ${invalidPositions} invalid talent positions for ${specialization.name}`);
+          }
           return {
             id: specialization.id,
             name: specialization.name,
+            icon: getTalentTreeIcon(backgroundId),
+            firstColumn,
+            invalidPositions,
             backgroundImage: backgroundId
               ? `https://wow.zamimg.com/images/wow/talents/backgrounds/classicplus/${backgroundId}.jpg`
               : null,
-            nodes: treeResponse.data.spec_talent_nodes || []
+            nodes: validNodes
           };
         })
       );
@@ -317,11 +397,14 @@ const fetchForeverTalentTreeData = async (region, classId, token) => {
           const iconKey = `${region}-${spellId}`;
           if (!foreverSpellIconCache.has(iconKey)) {
             const iconRequest = axios.get(
-              `https://${region}.api.blizzard.com/data/wow/media/spell/${spellId}`,
-              requestConfig
-            ).then(response =>
-              response.data.assets?.find(asset => asset.key === 'icon')?.value || null
-            ).catch(error => {
+              `https://nether.wowhead.com/forever/tooltip/spell/${spellId}`,
+              { timeout: 10000 }
+            ).then(({ data }) => {
+              const iconName = data.icon;
+              return typeof iconName === 'string' && /^[a-z0-9_]+$/i.test(iconName)
+                ? `https://wow.zamimg.com/images/wow/icons/large/${iconName}.jpg`
+                : null;
+            }).catch(error => {
               console.error(`Could not fetch Forever talent icon for spell ${spellId}:`, error.message);
               return null;
             });
@@ -339,7 +422,6 @@ const fetchForeverTalentTreeData = async (region, classId, token) => {
       ));
 
       return trees.map(tree => {
-        const minColumn = Math.min(...tree.nodes.map(node => node.display_col || 1));
         const talentIdsByNodeId = new Map(tree.nodes.map(node => [
           node.id,
           node.ranks?.[0]?.tooltip?.talent?.id
@@ -347,7 +429,9 @@ const fetchForeverTalentTreeData = async (region, classId, token) => {
         return {
           id: tree.id,
           name: tree.name,
+          icon: tree.icon,
           backgroundImage: tree.backgroundImage,
+          invalidPositions: tree.invalidPositions,
           talents: tree.nodes.map(node => {
             const firstRank = node.ranks?.[0];
             const tooltip = firstRank?.tooltip;
@@ -358,8 +442,8 @@ const fetchForeverTalentTreeData = async (region, classId, token) => {
               spellId,
               name: tooltip?.talent?.name || tooltip?.spell_tooltip?.spell?.name || 'Unknown talent',
               description: tooltip?.spell_tooltip?.description || '',
-              row: node.display_row || 1,
-              column: (node.display_col || minColumn) - minColumn + 1,
+              row: node.display_row,
+              column: node.display_col - tree.firstColumn + 1,
               maxRank: node.ranks?.length || 1,
               icon: spellId ? iconUrls.get(spellId) : null,
               requirements: (node.locked_by || [])
@@ -403,7 +487,9 @@ const buildForeverTalentBuilds = async (region, classId, specializationGroups, t
       return {
         id: tree.id,
         name: tree.name,
+        icon: tree.icon,
         backgroundImage: tree.backgroundImage,
+        invalidPositions: tree.invalidPositions,
         maxPoints: 61,
         spentPoints: allocatedTree?.spent_points || 0,
         talents: tree.talents.map(talent => ({
@@ -452,6 +538,45 @@ const GEAR_SCORE_QUALITY = {
   HEIRLOOM: 7
 };
 
+const getEquipmentItemLevel = item => {
+  const candidates = [item.level?.value, item.level, item.item?.level?.value, item.item?.level];
+  for (const candidate of candidates) {
+    if ((typeof candidate === 'number' || (typeof candidate === 'string' && candidate.trim()))
+      && Number.isFinite(Number(candidate)) && Number(candidate) > 0) return Number(candidate);
+  }
+  return null;
+};
+
+const enrichClassicItemLevels = async (items, region, version, token) => {
+  const requests = new Map();
+  const namespace = getItemMediaNamespace(version, region);
+  const enriched = await Promise.all(items.map(async item => {
+    if (getEquipmentItemLevel(item)) return item;
+    const id = item.item?.id;
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      console.error('Cannot fetch item level: equipped item has no valid item ID');
+      return item;
+    }
+    if (!requests.has(id)) {
+      requests.set(id, axios.get(`https://${region}.api.blizzard.com/data/wow/item/${id}`, {
+        params: { namespace, locale: LOCALE },
+        headers: { Authorization: `Bearer ${token}` }
+      }).then(({ data }) => {
+        if (typeof data.level !== 'number' || !Number.isFinite(data.level) || data.level <= 0) {
+          throw new Error('Item level missing from item data');
+        }
+        return data.level;
+      }).catch(error => {
+        console.error(`Could not fetch item level for item ${id}:`, error.response?.data || error.message);
+        return null;
+      }));
+    }
+    const level = await requests.get(id);
+    return level === null ? item : { ...item, level: { value: level } };
+  }));
+  return enriched;
+};
+
 const calculateGearScore = (items = []) => {
   let score = 0;
   let hasTwoHandedWeapon = false;
@@ -460,7 +585,7 @@ const calculateGearScore = (items = []) => {
 
   const scoredItems = items.map(item => {
     const slot = item.slot?.type || item.slot?.name;
-    const itemLevel = Number(item.level?.value || item.level || 0);
+    const itemLevel = getEquipmentItemLevel(item);
     const rarityName = item.quality?.type || item.quality?.name;
     let rarity = GEAR_SCORE_QUALITY[rarityName] ?? Number(item.quality?.value);
     let qualityScale = 1;
@@ -615,6 +740,7 @@ app.get('/api/forever/character/:region', async (req, res) => {
     };
 
     const profileResponse = await axios.get(characterUrl, requestConfig);
+    const pvpRequest = fetchCharacterPvp(characterUrl, requestConfig, 'wow-forever');
     let characterMedia = null;
     let specializations = null;
     try {
@@ -688,6 +814,7 @@ app.get('/api/forever/character/:region', async (req, res) => {
       profile: profileResponse.data,
       equipment: equipmentResponse.data,
       statistics,
+      pvp: await pvpRequest,
       specializations,
       talentBuilds,
       media: characterMedia
@@ -776,6 +903,10 @@ app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
         'Authorization': `Bearer ${token}`
       }
     });
+    const pvpRequest = fetchCharacterPvp(profileUrl, {
+      params: { namespace: getNamespace(version, region, 'profile'), locale: LOCALE },
+      headers: { Authorization: `Bearer ${token}` }
+    }, version);
 
     const mediaUrl = `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}/character-media`;
     
@@ -851,8 +982,20 @@ app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
       })
     );
 
-    equipmentResponse.data.equipped_items = equipmentWithIcons;
-    profileResponse.data.gearscore = calculateGearScore(equipmentWithIcons);
+    const equipmentWithLevels = version === 'wow-forever'
+      ? equipmentWithIcons
+      : await enrichClassicItemLevels(equipmentWithIcons, region, version, token);
+    equipmentResponse.data.equipped_items = equipmentWithLevels;
+    const missingLevels = equipmentWithLevels.filter(item => !getEquipmentItemLevel(item));
+    const missingScoredLevels = missingLevels.some(item =>
+      GEAR_SCORE_SLOT_MODIFIERS[item.slot?.type || item.slot?.name] > 0
+    );
+    if (missingLevels.length) {
+      equipmentResponse.data.warning = missingScoredLevels
+        ? 'Some item levels could not be loaded; gearscore is unavailable.'
+        : 'Some item levels could not be loaded.';
+    }
+    profileResponse.data.gearscore = missingScoredLevels ? null : calculateGearScore(equipmentWithLevels);
 
     const statsUrl = `https://${region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterSlug}/statistics`;
     
@@ -897,6 +1040,7 @@ app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
       profile: profileResponse.data,
       equipment: equipmentResponse.data,
       statistics: statsResponse.data,
+      pvp: await pvpRequest,
       media: characterMedia,
       specializations,
       talentBuilds
@@ -907,6 +1051,99 @@ app.get('/api/character/:region/:realm/:characterName', async (req, res) => {
     res.status(error.response?.status || 500).json({
       error: error.response?.data?.detail || 'Failed to fetch character data',
       message: error.message
+    });
+  }
+});
+
+// Resolve the guild from the character profile so realm-free characters work too.
+app.get('/api/character-guild/:region', async (req, res) => {
+  const region = req.params.region.toLowerCase();
+  const { version, name, realm } = req.query;
+  if (!['us', 'eu', 'kr', 'tw'].includes(region)
+    || !['classic-era', 'tbc-anniversary', 'wow-forever'].includes(version)
+    || typeof name !== 'string' || !name.trim()
+    || (version !== 'wow-forever' && (typeof realm !== 'string' || !realm.trim()))) {
+    return res.status(400).json({ error: 'Invalid character location or name' });
+  }
+
+  try {
+    const token = await getAccessToken();
+    const slug = name.trim().toLowerCase().replace(/\s+/g, '-');
+    const characterPath = version === 'wow-forever'
+      ? encodeURIComponent(slug)
+      : `${encodeURIComponent(realm.trim().toLowerCase().replace(/\s+/g, '-'))}/${encodeURIComponent(slug)}`;
+    const origin = `https://${region}.api.blizzard.com`;
+    const config = {
+      params: { namespace: getNamespace(version, region, 'profile'), locale: LOCALE },
+      headers: { Authorization: `Bearer ${token}` },
+      maxRedirects: 0
+    };
+    const { data: profile } = await axios.get(`${origin}/profile/wow/character/${characterPath}`, config);
+    if (!profile.guild) return res.json({ guild: null, roster: null });
+
+    let guildUrl;
+    if (profile.guild.key?.href) {
+      guildUrl = new URL(profile.guild.key.href);
+      if (guildUrl.origin !== origin || guildUrl.username || guildUrl.password
+        || !/^\/(?:data|profile)\/wow\/guild\/[^/]+(?:\/[^/]+)?\/?$/.test(guildUrl.pathname)) {
+        throw new Error('Invalid guild link in character profile');
+      }
+    } else if (version !== 'wow-forever' && profile.guild.name) {
+      const guildRealm = profile.guild.realm?.slug || realm;
+      const guildSlug = profile.guild.name.trim().toLowerCase().replace(/\s+/g, '-');
+      guildUrl = new URL(`${origin}/data/wow/guild/${encodeURIComponent(guildRealm)}/${encodeURIComponent(guildSlug)}`);
+    } else {
+      return res.status(404).json({ error: 'Guild roster is not available for this character.' });
+    }
+
+    const rosterUrl = `${origin}${guildUrl.pathname.replace(/\/$/, '')}/roster`;
+    const { data: roster } = await axios.get(rosterUrl, config);
+    if (!Array.isArray(roster.members)) {
+      throw new Error('Invalid guild roster response');
+    }
+    const raceIds = [...new Set(roster.members
+      .map(member => member.character?.playable_race || member.character?.race)
+      .filter(race => !race?.name && Number.isSafeInteger(race?.id) && race.id > 0)
+      .map(race => race.id))];
+    let raceWarning = false;
+    const raceNames = new Map(await Promise.all(raceIds.map(async id => {
+      try {
+        const { data } = await axios.get(`${origin}/data/wow/playable-race/${id}`, {
+          ...config,
+          params: { namespace: getItemMediaNamespace(version, region), locale: LOCALE }
+        });
+        if (typeof data.name !== 'string' || !data.name) throw new Error('Race name missing');
+        return [id, data.name];
+      } catch (error) {
+        raceWarning = true;
+        console.error(`Could not fetch playable race ${id}:`, error.response?.data || error.message);
+        return [id, null];
+      }
+    })));
+    roster.members = roster.members.map(member => {
+      const character = member.character;
+      if (!character) return member;
+      const characterClass = character?.playable_class;
+      const className = classicClassNames[characterClass?.id];
+      const raceField = character.playable_race ? 'playable_race' : 'race';
+      const race = character[raceField];
+      const raceName = raceNames.get(race?.id);
+      return {
+        ...member,
+        character: {
+          ...character,
+          ...(className && !characterClass.name ? { playable_class: { ...characterClass, name: className } } : {}),
+          ...(raceName && !race.name ? { [raceField]: { ...race, name: raceName } } : {})
+        }
+      };
+    });
+    return res.json({ guild: profile.guild, roster, warning: raceWarning ? 'Some race names could not be loaded.' : null });
+  } catch (error) {
+    console.error('Error fetching character guild roster:', error.response?.data || error.message);
+    return res.status(error.response?.status === 404 ? 404 : 502).json({
+      error: error.response?.status === 404
+        ? 'Guild roster is not available for this character.'
+        : 'Unable to load the guild roster. Please try again later.'
     });
   }
 });
@@ -975,7 +1212,16 @@ app.get('/api/realms', async (req, res) => {
           }
         );
 
-        return response.data.realms.map(r => ({
+        return response.data.realms.filter(r =>
+          !String(r.name || '').trim().toLowerCase().startsWith('progwow')
+          && !String(r.slug || '').trim().toLowerCase().startsWith('progwow')
+          && !(version === 'classic-era' && (
+            /^eu[45](?:$|[-_\s])/i.test(String(r.name || '').trim())
+            || /^eu[45](?:$|[-_\s])/i.test(String(r.slug || '').trim())
+          ))
+          && !(version === 'tbc-anniversary' && region === 'eu'
+            && String(r.slug || '').trim().toLowerCase() === 'anniversary')
+        ).map(r => ({
           ...r,
           region
         }));

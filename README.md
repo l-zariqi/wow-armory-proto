@@ -2,6 +2,15 @@
 
 This project contains a React frontend and an Express backend that talk to the Blizzard API to fetch character, realm, and item data for a WoW Classic-style armory experience.
 
+WoW Forever live suggestions default to all supported regions (US, EU, KR, and TW) using the existing suggestion provider. Choose a suggestion to open it in its region, or choose a specific region for a direct full-name search. Suggestions are limited to the provider's index.
+
+The Stats tab displays values reported by Blizzard's character statistics endpoint. Fields not returned by the API are shown as N/A.
+For Classic Era and TBC Anniversary, item levels are loaded from Blizzard's item data when absent from equipment; gearscore is unavailable if a scored item's level cannot be loaded. PROGWOW realms, Classic Era EU4/EU5 realms, and the TBC Anniversary EU realm are excluded from the realm selector. Blizzard's TBC equipment responses may omit socket and equipped gem data.
+The PvP tab displays the available Blizzard PvP summary, battleground statistics, and rated bracket records. Some characters or game versions may not provide these fields.
+The Talents tab omits nodes with invalid Blizzard grid positions and displays a notice when this occurs.
+The Guild tab loads the Blizzard guild roster on demand and shows the member details returned by the API, sorted by rank by default. Member names open their armory pages in a new tab when the required name and realm are available. Select a column heading to sort, and select it again to reverse the order. Rank 0 is labeled Guild Master and rank 1 Officer; other ranks remain numeric because Blizzard's roster does not provide their titles. Unavailable fields are shown as N/A; some guilds or game versions may not have an accessible roster.
+The selected character tab is included in the URL so it remains selected after a refresh.
+
 ## Requirements
 
 Before you start, make sure you have the following installed:
